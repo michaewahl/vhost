@@ -5,7 +5,7 @@ import { execSafe } from '../utils/exec.js'
 import { getStateDir, getCertsDir, getNginxDir, getRoutesPath, readRoutes } from '../utils/state.js'
 import { findNginxBin, isNginxRunning } from './nginx-config-writer.js'
 import { isMkcertInstalled, isCAInstalled } from './cert-manager.js'
-import { isResolverConfigured } from './dns-resolver.js'
+import { isResolverConfigured, isDnsmasqInstalled, isDnsmasqConfigured } from './dns-resolver.js'
 import { logger } from '../utils/logger.js'
 
 export interface CheckResult {
@@ -97,6 +97,20 @@ async function checkPorts(): Promise<CheckResult> {
   return { label: 'ports 80/443', ok: false, detail: issues.join(', ') }
 }
 
+async function checkDnsmasq(): Promise<CheckResult> {
+  const installed = await isDnsmasqInstalled()
+  if (!installed) {
+    return { label: 'dnsmasq', ok: false, detail: 'not installed — run: vhost setup' }
+  }
+  const tld = process.env.VHOST_TLD ?? 'localhost'
+  const configured = await isDnsmasqConfigured(tld)
+  return {
+    label: 'dnsmasq',
+    ok: configured,
+    detail: configured ? `*.${tld} → 127.0.0.1` : `not configured for *.${tld} — run: vhost setup`,
+  }
+}
+
 async function checkDnsResolver(): Promise<CheckResult> {
   const tld = process.env.VHOST_TLD ?? 'localhost'
   const configured = await isResolverConfigured(tld)
@@ -129,6 +143,7 @@ export async function runDoctor(): Promise<CheckResult[]> {
     checkNginxConfig(),
     checkNginxRunning(),
     checkPorts(),
+    checkDnsmasq(),
     checkDnsResolver(),
     checkActiveRoutes(),
   ])

@@ -57,7 +57,8 @@ describe('buildServerBlock', () => {
       keyFile: '/home/user/.vhost/certs/localhost-key.pem',
     }
     const config = buildServerBlock(route)
-    expect(config).toContain('listen 127.0.0.1:443 ssl http2;')
+    expect(config).toContain('listen 127.0.0.1:443 ssl;')
+    expect(config).toContain('http2 on;')
     expect(config).toContain('listen 127.0.0.1:80;')
   })
 

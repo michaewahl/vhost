@@ -135,7 +135,7 @@ program
     const { ensureMainConfig, startNginx, isNginxRunning } = await import('./agents/nginx-config-writer.js')
     const { ensureStateDirs } = await import('./utils/state.js')
 
-    const { isResolverConfigured, installResolver } = await import('./agents/dns-resolver.js')
+    const { isResolverConfigured, isDnsmasqInstalled, isDnsmasqConfigured, installResolver } = await import('./agents/dns-resolver.js')
 
     logger.info('Setting up vhost...')
 
@@ -152,16 +152,17 @@ program
       logger.warn(`Cert setup failed: ${(err as Error).message}`)
     }
 
-    // DNS resolver for *.localhost
+    // DNS: dnsmasq + /etc/resolver for *.localhost wildcard resolution
     const tld = process.env.VHOST_TLD ?? 'localhost'
-    if (!await isResolverConfigured(tld)) {
-      logger.info(`Setting up DNS resolver for *.${tld} (requires sudo)...`)
+    const dnsReady = await isDnsmasqInstalled() && await isDnsmasqConfigured(tld) && await isResolverConfigured(tld)
+    if (!dnsReady) {
+      logger.info(`Setting up DNS for *.${tld} (requires sudo, may install dnsmasq)...`)
       try {
         await installResolver(tld)
-        logger.success(`DNS resolver configured: /etc/resolver/${tld}`)
+        logger.success(`DNS configured: dnsmasq + /etc/resolver/${tld}`)
       } catch (err) {
-        logger.warn(`DNS resolver setup failed: ${(err as Error).message}`)
-        logger.dim(`  Run manually: sudo mkdir -p /etc/resolver && sudo bash -c 'echo "nameserver 127.0.0.1" > /etc/resolver/${tld}'`)
+        logger.warn(`DNS setup failed: ${(err as Error).message}`)
+        logger.dim('  Run manually: brew install dnsmasq && vhost setup')
       }
     } else {
       logger.success('DNS resolver already configured')

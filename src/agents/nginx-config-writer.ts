@@ -87,12 +87,14 @@ export function buildServerBlock(route: NginxRoute): string {
     : ''
 
   const listenLines = https
-    ? `    listen 127.0.0.1:443 ssl http2;\n    listen 127.0.0.1:80;`
+    ? `    listen 127.0.0.1:443 ssl;\n    listen 127.0.0.1:80;`
     : `    listen 127.0.0.1:80;`
+
+  const http2Line = https ? '\n    http2 on;' : ''
 
   return `# vhost: ${hostname} → ${port}
 server {
-${listenLines}
+${listenLines}${http2Line}
     server_name ${hostname};
 ${sslLines}
     location / {
@@ -187,37 +189,56 @@ export async function testConfig(nginxDir?: string): Promise<boolean> {
 
 /**
  * Check if the vhost nginx instance is currently running.
+ * Checks PID file first, then falls back to checking if port 80 is bound.
  */
 export async function isNginxRunning(nginxDir?: string): Promise<boolean> {
   const dir = nginxDir ?? getNginxDir()
   const pidFile = join(dir, 'nginx.pid')
 
-  if (!existsSync(pidFile)) return false
-
-  try {
-    const pid = (await readFile(pidFile, 'utf-8')).trim()
-    if (!pid) return false
-    const pidNum = parseInt(pid, 10)
-    // Validate PID is a positive integer in valid range
-    if (isNaN(pidNum) || pidNum <= 0 || pidNum > 4194304) return false
-    // Send signal 0 — checks if process exists without killing it
-    process.kill(pidNum, 0)
-    return true
-  } catch {
-    return false
+  // Check PID file
+  if (existsSync(pidFile)) {
+    try {
+      const pid = (await readFile(pidFile, 'utf-8')).trim()
+      if (pid) {
+        const pidNum = parseInt(pid, 10)
+        if (!isNaN(pidNum) && pidNum > 0 && pidNum <= 4194304) {
+          process.kill(pidNum, 0)
+          return true
+        }
+      }
+    } catch {
+      // PID file exists but process is gone — stale file
+    }
   }
+
+  // Fallback: check if something is listening on port 80
+  const result = await execSafe('lsof -i :80 -sTCP:LISTEN -t')
+  return !!(result?.stdout.trim())
 }
 
 /**
  * Start the vhost nginx instance as a daemon.
+ * Uses sudo because port 80/443 requires root on macOS.
+ * If port 80 is already bound (stale nginx), kills it first.
  */
 export async function startNginx(nginxDir?: string): Promise<void> {
   const dir = nginxDir ?? getNginxDir()
   const configPath = await ensureMainConfig(dir)
   const bin = await findNginxBin()
 
+  // If port 80 is already in use, try to stop the old instance
+  const portCheck = await execSafe('lsof -i :80 -sTCP:LISTEN -t')
+  if (portCheck?.stdout.trim()) {
+    const pids = portCheck.stdout.trim().split('\n')
+    for (const pid of pids) {
+      await execSafe(`sudo kill ${pid.trim()}`)
+    }
+    // Brief wait for port release
+    await new Promise((r) => setTimeout(r, 500))
+  }
+
   try {
-    await spawnSafe(bin, ['-c', configPath])
+    await exec(`sudo ${bin} -c "${configPath}"`)
   } catch (err) {
     throw new NginxConfigError('Failed to start nginx', err)
   }
@@ -235,12 +256,11 @@ export async function reloadNginx(nginxDir?: string): Promise<void> {
     return
   }
 
-  const pidFile = join(dir, 'nginx.pid')
   const bin = await findNginxBin()
   const configPath = join(dir, 'nginx.conf')
 
   try {
-    await spawnSafe(bin, ['-s', 'reload', '-c', configPath])
+    await exec(`sudo ${bin} -s reload -c "${configPath}"`)
   } catch (err) {
     throw new NginxConfigError('Failed to reload nginx', err)
   }
@@ -258,7 +278,7 @@ export async function stopNginx(nginxDir?: string): Promise<void> {
   const configPath = join(dir, 'nginx.conf')
 
   try {
-    await spawnSafe(bin, ['-s', 'stop', '-c', configPath])
+    await exec(`sudo ${bin} -s stop -c "${configPath}"`)
   } catch (err) {
     throw new NginxConfigError('Failed to stop nginx', err)
   }
