@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vhost</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0e1117;
+      --surface:  #161b22;
+      --border:   #21262d;
+      --text:     #e6edf3;
+      --muted:    #7d8590;
+      --green:    #3fb950;
+      --blue:     #58a6ff;
+      --purple:   #bc8cff;
+      --yellow:   #d29922;
+      --font:     'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 32px 24px;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    header .meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    header .refresh {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-family: var(--font);
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    header .refresh:hover {
+      color: var(--text);
+      border-color: var(--muted);
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 16px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead th {
+      text-align: left;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 0 12px 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    tbody tr:hover { background: var(--surface); }
+    tbody tr:last-child { border-bottom: none; }
+
+    td {
+      padding: 12px 12px 12px 0;
+      vertical-align: middle;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot-live   { background: var(--green); box-shadow: 0 0 5px var(--green); }
+    .dot-alias  { background: var(--purple); }
+
+    .badge-live  { color: var(--green); }
+    .badge-alias { color: var(--purple); }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    .muted { color: var(--muted); }
+    .branch {
+      display: inline-block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .port {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .uptime {
+      color: var(--muted);
+      font-size: 12px;
+      min-width: 48px;
+    }
+
+    footer {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 11px;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>vhost</h1>
+  <span class="meta" id="summary">loading...</span>
+  <button class="refresh" onclick="load()">↻ refresh</button>
+</header>
+
+<div id="content"></div>
+
+<footer id="footer"></footer>
+
+<script>
+  function formatUptime(startedAt) {
+    if (!startedAt) return '—'
+    const s = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
+    if (s < 60) return s + 's'
+    const m = Math.floor(s / 60)
+    if (m < 60) return m + 'm'
+    return Math.floor(m / 60) + 'h'
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }
+
+  function buildURL(hostname) {
+    const isHttps = location.protocol === 'https:'
+    const port = location.port && location.port !== '80' && location.port !== '443'
+      ? ':' + location.port
+      : ''
+    const proto = isHttps ? 'https' : 'http'
+    return proto + '://' + hostname + port
+  }
+
+  async function load() {
+    const res = await fetch('/api/routes')
+    const { routes, proxyUptime } = await res.json()
+
+    const entries = Object.entries(routes)
+    const live = entries.filter(([, r]) => !r.alias).length
+    const aliases = entries.filter(([, r]) => r.alias).length
+
+    document.getElementById('summary').textContent =
+      live + ' running' + (aliases ? ', ' + aliases + ' alias' + (aliases > 1 ? 'es' : '') : '')
+
+    const content = document.getElementById('content')
+
+    if (entries.length === 0) {
+      content.innerHTML = '<p class="empty">No active routes. Start a service with <code>vhost run</code>.</p>'
+    } else {
+      content.innerHTML = '<table>' +
+        '<thead><tr>' +
+        '<th>status</th>' +
+        '<th>service</th>' +
+        '<th>branch</th>' +
+        '<th>port</th>' +
+        '<th>uptime</th>' +
+        '</tr></thead>' +
+        '<tbody>' +
+        entries.map(([hostname, r]) => {
+          const isAlias = r.alias
+          const safeHostname = esc(hostname)
+          const url = esc(buildURL(hostname))
+          const badge = isAlias
+            ? '<span class="badge badge-alias"><span class="dot dot-alias"></span>alias</span>'
+            : '<span class="badge badge-live"><span class="dot dot-live"></span>live</span>'
+          const branch = r.branch
+            ? '<span class="branch">' + esc(r.branch) + '</span>'
+            : '<span class="muted">—</span>'
+          const uptime = '<span class="uptime">' + esc(formatUptime(r.startedAt)) + '</span>'
+          const port = '<span class="port">:' + esc(r.port) + '</span>'
+
+          return '<tr>' +
+            '<td>' + badge + '</td>' +
+            '<td><a href="' + url + '" target="_blank">' + safeHostname + '</a></td>' +
+            '<td>' + branch + '</td>' +
+            '<td>' + port + '</td>' +
+            '<td>' + uptime + '</td>' +
+            '</tr>'
+        }).join('') +
+        '</tbody></table>'
+    }
+
+    const uptimeStr = proxyUptime != null
+      ? 'proxy up ' + formatUptime(new Date(Date.now() - proxyUptime * 1000).toISOString())
+      : ''
+    document.getElementById('footer').textContent =
+      'vhost.localhost  ·  ' + new Date().toLocaleTimeString() +
+      (uptimeStr ? '  ·  ' + uptimeStr : '')
+  }
+
+  load()
+</script>
+</body>
+</html>

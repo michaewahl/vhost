@@ -1,0 +1,29 @@
+{
+  "name": "vhost",
+  "version": "0.1.0",
+  "description": "Named .localhost URLs for local development via Nginx + mkcert",
+  "type": "module",
+  "bin": {
+    "vhost": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc && cp -r src/dashboard dist/",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
