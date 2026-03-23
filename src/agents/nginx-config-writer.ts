@@ -230,8 +230,12 @@ export async function startNginx(nginxDir?: string): Promise<void> {
   const portCheck = await execSafe('lsof -i :80 -sTCP:LISTEN -t')
   if (portCheck?.stdout.trim()) {
     const pids = portCheck.stdout.trim().split('\n')
-    for (const pid of pids) {
-      await execSafe(`sudo kill ${pid.trim()}`)
+    for (const raw of pids) {
+      const pid = raw.trim()
+      // Validate PID is a positive integer to prevent command injection
+      if (/^\d+$/.test(pid) && parseInt(pid, 10) > 0) {
+        process.kill(parseInt(pid, 10), 'SIGTERM')
+      }
     }
     // Brief wait for port release
     await new Promise((r) => setTimeout(r, 500))
