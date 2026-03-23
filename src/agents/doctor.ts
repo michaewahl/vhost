@@ -5,6 +5,7 @@ import { execSafe } from '../utils/exec.js'
 import { getStateDir, getCertsDir, getNginxDir, getRoutesPath, readRoutes } from '../utils/state.js'
 import { findNginxBin, isNginxRunning } from './nginx-config-writer.js'
 import { isMkcertInstalled, isCAInstalled } from './cert-manager.js'
+import { isResolverConfigured } from './dns-resolver.js'
 import { logger } from '../utils/logger.js'
 
 export interface CheckResult {
@@ -96,6 +97,18 @@ async function checkPorts(): Promise<CheckResult> {
   return { label: 'ports 80/443', ok: false, detail: issues.join(', ') }
 }
 
+async function checkDnsResolver(): Promise<CheckResult> {
+  const tld = process.env.VHOST_TLD ?? 'localhost'
+  const configured = await isResolverConfigured(tld)
+  return {
+    label: `DNS resolver (*.${tld})`,
+    ok: configured,
+    detail: configured
+      ? `/etc/resolver/${tld}`
+      : `missing — run: vhost setup`,
+  }
+}
+
 async function checkActiveRoutes(): Promise<CheckResult> {
   const routes = await readRoutes()
   const count = Object.keys(routes).length
@@ -116,6 +129,7 @@ export async function runDoctor(): Promise<CheckResult[]> {
     checkNginxConfig(),
     checkNginxRunning(),
     checkPorts(),
+    checkDnsResolver(),
     checkActiveRoutes(),
   ])
   return checks

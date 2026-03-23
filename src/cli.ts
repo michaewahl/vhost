@@ -135,6 +135,8 @@ program
     const { ensureMainConfig, startNginx, isNginxRunning } = await import('./agents/nginx-config-writer.js')
     const { ensureStateDirs } = await import('./utils/state.js')
 
+    const { isResolverConfigured, installResolver } = await import('./agents/dns-resolver.js')
+
     logger.info('Setting up vhost...')
 
     await ensureStateDirs()
@@ -148,6 +150,21 @@ program
       logger.success(`Certs ready: ${certs.cert}`)
     } catch (err) {
       logger.warn(`Cert setup failed: ${(err as Error).message}`)
+    }
+
+    // DNS resolver for *.localhost
+    const tld = process.env.VHOST_TLD ?? 'localhost'
+    if (!await isResolverConfigured(tld)) {
+      logger.info(`Setting up DNS resolver for *.${tld} (requires sudo)...`)
+      try {
+        await installResolver(tld)
+        logger.success(`DNS resolver configured: /etc/resolver/${tld}`)
+      } catch (err) {
+        logger.warn(`DNS resolver setup failed: ${(err as Error).message}`)
+        logger.dim(`  Run manually: sudo mkdir -p /etc/resolver && sudo bash -c 'echo "nameserver 127.0.0.1" > /etc/resolver/${tld}'`)
+      }
+    } else {
+      logger.success('DNS resolver already configured')
     }
 
     if (!await isNginxRunning()) {

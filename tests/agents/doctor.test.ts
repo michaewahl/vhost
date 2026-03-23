@@ -28,6 +28,7 @@ describe('runDoctor', () => {
     expect(labels).toContain('TLS certs')
     expect(labels).toContain('nginx.conf')
     expect(labels).toContain('active routes')
+    expect(labels.some((l) => l.startsWith('DNS resolver'))).toBe(true)
   })
 
   it('active routes check is always ok (informational)', async () => {
