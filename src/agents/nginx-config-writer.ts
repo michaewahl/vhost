@@ -199,20 +199,32 @@ export async function isNginxRunning(nginxDir?: string): Promise<boolean> {
   if (existsSync(pidFile)) {
     try {
       const pid = (await readFile(pidFile, 'utf-8')).trim()
-      if (pid) {
+      if (pid && /^\d+$/.test(pid)) {
         const pidNum = parseInt(pid, 10)
-        if (!isNaN(pidNum) && pidNum > 0 && pidNum <= 4194304) {
-          process.kill(pidNum, 0)
-          return true
+        if (pidNum > 0 && pidNum <= 4194304) {
+          // Try non-root signal first
+          try {
+            process.kill(pidNum, 0)
+            return true
+          } catch {
+            // nginx runs as root — process.kill fails with EPERM.
+            // EPERM means the process exists but we lack permission (i.e., it IS running).
+            // ESRCH means process doesn't exist.
+            const check = await execSafe(`kill -0 ${pidNum}`)
+            // kill -0 exits 0 if process exists (even as root), non-zero if not.
+            // But without sudo it also fails on root processes. Use ps instead.
+            const psCheck = await execSafe(`ps -p ${pidNum} -o pid=`)
+            if (psCheck?.stdout.trim() === pid) return true
+          }
         }
       }
     } catch {
-      // PID file exists but process is gone — stale file
+      // PID file exists but unreadable
     }
   }
 
-  // Fallback: check if something is listening on port 80
-  const result = await execSafe('lsof -i :80 -sTCP:LISTEN -t')
+  // Fallback: check if something is listening on port 80 (works without sudo on macOS)
+  const result = await execSafe('lsof -nP -iTCP:80 -sTCP:LISTEN')
   return !!(result?.stdout.trim())
 }
 

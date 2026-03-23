@@ -180,7 +180,24 @@ program
       logger.success('Nginx already running')
     }
 
-    logger.url('Ready', 'http://vhost.localhost')
+    // Start dashboard server
+    const { startDashboard } = await import('./agents/dashboard-server.js')
+    const { getCertPaths } = await import('./agents/cert-manager.js')
+    try {
+      let certFile: string | undefined
+      let keyFile: string | undefined
+      try {
+        const certs = getCertPaths()
+        certFile = certs.cert
+        keyFile = certs.key
+      } catch { /* no certs — run HTTP */ }
+
+      await startDashboard({ https: !!certFile, certFile, keyFile })
+    } catch (err) {
+      logger.warn(`Dashboard start failed: ${(err as Error).message}`)
+    }
+
+    logger.url('Ready', `http://vhost.localhost`)
   })
 
 // ─── vhost doctor ────────────────────────────────────────────────────────

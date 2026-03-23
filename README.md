@@ -1,6 +1,6 @@
 # vhost
 
-Named `.localhost` URLs for local development. Powered by Nginx + mkcert.
+Named `.localhost` URLs for local development. Powered by Nginx + mkcert + dnsmasq.
 
 ```
 vhost myapp next dev
@@ -13,6 +13,7 @@ No custom proxy daemon. No invented infrastructure. Nginx does the proxying, mkc
 
 ```
 Browser -> https://myapp.localhost
+  -> dnsmasq (resolves *.localhost to 127.0.0.1)
   -> Nginx (port 443, TLS via wildcard *.localhost cert)
   -> proxy_pass http://127.0.0.1:4237
   -> Your dev server (random port, injected via PORT env var)
@@ -21,13 +22,13 @@ Browser -> https://myapp.localhost
 ## Install
 
 ```bash
-# Prerequisites
+# Prerequisites (vhost setup installs dnsmasq automatically if missing)
 brew install nginx mkcert nss
 
 # Install vhost
 npm install -g vhost
 
-# One-time setup (generates certs, trusts CA, starts nginx)
+# One-time setup (generates certs, trusts CA, configures DNS, starts nginx + dashboard)
 vhost setup
 ```
 
@@ -93,6 +94,15 @@ vhost up
 ```
 
 All services start in parallel. Env injection wires them together automatically — `NEXT_PUBLIC_API_URL=https://api.localhost` is written to `frontend/.env.local`.
+
+### Dashboard
+
+`vhost setup` starts a web dashboard at **http://vhost.localhost** showing all active routes, their status (live vs alias), git branch, port, and uptime. Refresh to update.
+
+```bash
+vhost open              # open dashboard in browser
+vhost open myapp        # open a specific service
+```
 
 ### Route management
 
